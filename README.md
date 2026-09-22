@@ -1,5 +1,7 @@
 # Sensor_3D_Modeler
 
+### ▶ [Open Live Demo](https://flashdato.github.io/3DSM_Project/)
+
 **Intelligent Sensor Fusion for 3D Human Modelling** — Masters research project.
 
 A software-first pipeline that will grow into a real-time system for reconstructing

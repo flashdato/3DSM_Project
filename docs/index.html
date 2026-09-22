@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sensor 3D Modeler — Live Demo</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0d1117;
+      --panel: #161b22;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    #root { display: grid; grid-template-rows: auto 1fr auto; height: 100%; }
+    header {
+      padding: 14px 20px; border-bottom: 1px solid #21262d;
+      display: flex; align-items: center; justify-content: space-between; gap: 20px;
+    }
+    header h1 { margin: 0; font-size: 1.05rem; font-weight: 600; }
+    header .sub { color: var(--muted); font-size: 0.85rem; }
+    header a { color: var(--accent); text-decoration: none; font-size: 0.85rem; }
+    header a:hover { text-decoration: underline; }
+    #stage { position: relative; overflow: hidden; }
+    canvas { display: block; width: 100%; height: 100%; }
+    #hud {
+      position: absolute; left: 16px; bottom: 16px;
+      background: rgba(22, 27, 34, 0.75); backdrop-filter: blur(6px);
+      border: 1px solid #21262d; border-radius: 8px;
+      padding: 10px 14px; font-size: 0.9rem; min-width: 180px;
+    }
+    #hud .move { color: var(--text); font-weight: 600; }
+    #hud .time { color: var(--muted); font-size: 0.8rem; margin-top: 3px; }
+    #controls {
+      position: absolute; right: 16px; bottom: 16px;
+      display: flex; gap: 8px;
+    }
+    button {
+      background: var(--panel); color: var(--text);
+      border: 1px solid #30363d; border-radius: 6px;
+      padding: 6px 12px; font-size: 0.85rem; cursor: pointer;
+      font-family: inherit;
+    }
+    button:hover { border-color: var(--accent); }
+    button.active { border-color: var(--accent); color: var(--accent); }
+    footer {
+      padding: 8px 20px; border-top: 1px solid #21262d;
+      font-size: 0.75rem; color: var(--muted);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+  </style>
+</head>
+<body>
+  <div id="root">
+    <header>
+      <div>
+        <h1>Sensor 3D Modeler</h1>
+        <div class="sub">Live browser demo — 10-segment kinematic human model, Three.js</div>
+      </div>
+      <a href="https://github.com/flashdato/3DSM_Project" target="_blank" rel="noopener">source on GitHub</a>
+    </header>
+    <div id="stage">
+      <canvas id="c"></canvas>
+      <div id="hud">
+        <div class="move" id="move">—</div>
+        <div class="time" id="time">t = 0.00 s</div>
+      </div>
+      <div id="controls">
+        <button data-move="wave">Wave</button>
+        <button data-move="squat">Squat</button>
+        <button data-move="cycle" class="active">Auto-cycle</button>
+      </div>
+    </div>
+    <footer>
+      <span>drag to rotate · scroll to zoom · right-drag to pan</span>
+      <span>Phase 1 of the sensor-fusion masters project</span>
+    </footer>
+  </div>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

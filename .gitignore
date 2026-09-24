@@ -4,3 +4,13 @@ __pycache__/
 *.pyo
 .ipynb_checkpoints/
 .DS_Store
+
+# IMU recordings (kept outside git, see HARDWARE.md)
+recordings/
+
+# Professor materials and personal notes (never publish)
+Profesor_Assist/
+Professor_Materials_Summary.html
+
+# IDE settings
+.idea/

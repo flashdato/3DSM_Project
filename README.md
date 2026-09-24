@@ -1,138 +1,54 @@
-# Sensor_3D_Modeler
+# 3DSM — Sensor 3D Modeler
 
 ### ▶ [Open Live Demo](https://flashdato.github.io/3DSM_Project/)
 
-**Intelligent Sensor Fusion for 3D Human Modelling** — Masters research project.
+**Intelligent Sensor Fusion for 3D Human Modelling**, a master's research project.
+Wearable IMUs on each body segment, fused with a kinematic body model to reconstruct
+3D human motion in real time.
 
-A software-first pipeline that will grow into a real-time system for reconstructing
-3D human pose and activity from fused wearable sensor data (starting with IMU,
-extensible to other modalities). Development is staged: visualisation and simulation
-come first, hardware is deferred until the model, animation, and evaluation loop are
-solid.
+[Project reference](PROJECT.md) · [Roadmap](PLAN.md) · [Hardware](HARDWARE.md) · [Changelog](CHANGELOG.md)
 
----
+<!-- VERSION START: replace this block on every release; older versions go to CHANGELOG.md -->
 
-## Motivation
+## Current version: v0.2 — Hardware bring-up plan
 
-Wearable inertial sensors are cheap, unobtrusive, and privacy-preserving compared to
-cameras, but a single IMU cannot recover full-body pose on its own. Multi-sensor
-fusion — combining several IMUs (and optionally other modalities) with a kinematic
-body model — is the standard route to robust human-motion understanding.
+*25 Sep 2026*
 
-Downstream applications under consideration:
+### Progress so far
 
-- **Activity / gesture recognition** (walking, sitting, waving, falling).
-- **Health monitoring** (fall detection, gait analysis, rehab tracking) — the most
-  global-impact framing and the current front-runner for the final application.
+- **Phase 1 is done.** The articulated body model with forward kinematics runs in Python and in the browser (live demo above).
+- **Direction is fixed: IMU-only.** It follows the professor's research design: simulation and quantitative checks first, real sensors next, fusion after that, and the health/activity application last.
+- **Hardware is designed.** Each body segment gets its own wireless node (ESP32 + GY-87 / MPU-6050 + LiPo), and the nodes send raw data over ESP-NOW to a receiver ESP32. The receiver broadcasts a time beacon every second so all nodes share one clock. Details are in [`HARDWARE.md`](HARDWARE.md).
+- **Firmware and recorder are written.** The node and receiver sketches compile for ESP32 and ESP32-S3, and `tools/log_serial.py` saves sessions to `recordings/`. They haven't run on real boards yet.
+- **The demo is now right-arm only.** It shows the upper arm and forearm with the two IMU nodes, live elbow and shoulder angles, and four moves: elbow curl, arm raise, side raise and wave.
 
-The direction between generic activity classification and health-focused monitoring
-will be finalised once the simulation pipeline produces enough signal to evaluate
-both.
+### Next: v0.3 plan
 
----
+**Hardware track (2 nodes, right arm)**
+1. Build the 2 nodes and the receiver, flash them, and confirm 100 samples/s per node with 0 lost and both nodes synced.
+2. Make a 15-minute static recording to get the real gyro bias and noise.
+3. Run a tap test to measure node-to-node sync error, at the start and after 10 minutes.
+4. Record elbow flexion 0→90→0° against a protractor.
 
-## Live web demo
+**Software track (runs in parallel)**
+1. Quaternion utilities with unit tests.
+2. A virtual IMU generator that turns the demo animations into synthetic accel/gyro data with configurable bias and noise, using the numbers from hardware step 2.
+3. An orientation filter (complementary first) and the N-pose sensor-to-segment calibration.
+4. A Python bridge that plays back a recording or live stream on the model's right arm.
+5. The first metrics: orientation error and elbow-angle error against ground truth.
 
-The Phase 1 kinematic model runs directly in the browser as live client-side
-code (Three.js, no build step, no video recording):
+**Done when:** moving the real arm moves the model's right arm on screen with under
+100 ms latency, and the elbow angle error has a measured number.
 
-- Local preview: `cd docs && python -m http.server 8000`, then open
-  `http://localhost:8000/`.
-- GitHub Pages: enable Pages for this repo with source set to
-  **`main` branch, `/docs` folder** — the page will publish at
-  `https://<your-github-username>.github.io/Sensor_3D_Modeler/`.
+<!-- VERSION END -->
 
-Drag to rotate, scroll to zoom, use the buttons to switch between Wave, Squat,
-and Auto-cycle.
-
-The full staged roadmap lives in [`PLAN.md`](PLAN.md).
-
----
-
-## Current status — Phase 1: Kinematic model & animation prototype
-
-A 10-segment articulated human body (head, torso, upper arms, forearms, thighs,
-shins) is rendered in 3D and driven through predefined joint trajectories. No
-hardware is involved yet — the goal of this phase is to lock down the body model,
-the coordinate conventions, and the animation loop that later phases will hook real
-sensor data into.
-
-Predefined demo movements implemented so far:
-
-- **Wave** — right-arm raise + forearm oscillation.
-- **Squat** — symmetric hip and knee flexion, with automatic pelvis-drop so the
-  feet stay on the ground.
-
----
-
-## Roadmap
-
-| Phase | Scope | Hardware |
-|-------|-------|----------|
-| 1 (current) | Kinematic body model, forward kinematics, canned animations, 3D viz | none |
-| 2 | Synthetic IMU streams generated from the kinematic model (ground-truth data for algorithm development) | none |
-| 3 | Real IMU integration (e.g. MPU-6050 / BNO055 over serial or BLE), single-sensor pose | 1–2 IMUs |
-| 4 | Multi-IMU fusion (Madgwick / Kalman / learned filter) driving the body model in real time | 5–7 IMUs |
-| 5 | Application layer — activity recognition or health monitoring (fall / gait) | wearable rig |
-
----
-
-## Repository layout
-
-```
-Sensor_3D_Modeler/
-├── README.md
-├── PLAN.md                # full 5-phase roadmap
-├── requirements.txt
-├── .gitignore
-├── src/                   # local Python dev version (matplotlib)
-│   ├── human_model.py     # 10-segment kinematic tree, forward kinematics, box rendering
-│   ├── animations.py      # predefined joint trajectories (wave, squat) + ground-lock helper
-│   └── main.py            # matplotlib interactive 3D animation loop
-└── docs/                  # public web demo (GitHub Pages)
-    ├── index.html         # dark-themed viewer with movement controls
-    └── main.js            # Three.js port of the same model + animations
-```
-
----
-
-## Running the Phase 1 demo
-
-Requires Python 3.10+.
+## Quick start
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
 pip install -r requirements.txt
-python src/main.py
+python src/main.py                               # right-arm demo (--full for whole body)
+python tools/log_serial.py --port /dev/ttyUSB0   # record from the receiver ESP32
 ```
 
-An interactive matplotlib window opens showing the model cycling through the
-predefined movements. Rotate the view with the mouse. Close the window to exit.
-
----
-
-## Coordinate conventions
-
-- World frame: right-handed. **+X right**, **+Y forward**, **+Z up**.
-- Rest pose: standing upright, arms hanging along −Z at the sides, feet on the
-  ground plane (z = 0).
-- Each joint stores a local 3×3 rotation applied on top of its parent's world
-  orientation; segments are drawn as rectangular boxes extending from the joint
-  along the joint's local −Z (or +Z for head and torso).
-
----
-
-## Planned sensor modality
-
-- **IMU (accelerometer + gyroscope)** — primary modality for the fusion pipeline.
-
-Additional modalities (radar, depth camera, RGB pose estimators) are not in scope
-right now but the model is deliberately built so that any per-limb rotation source
-can drive it.
-
----
-
-## License
-
-TBD.
+Flashing the ESP32s: [`firmware/README.md`](firmware/README.md). More commands, the
+repository layout and conventions: [`PROJECT.md`](PROJECT.md).

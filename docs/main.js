@@ -1,6 +1,8 @@
 // Sensor 3D Modeler — web port of the Python human-model demo.
 // Mirrors src/human_model.py and src/animations.py: same joint tree, segment
 // dimensions, and animation math, so behaviour matches the local Python version.
+// Current demo: right arm only (upper arm + forearm with the two IMU nodes of
+// the Phase 3 hardware bring-up). The full-body model is kept underneath.
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -45,6 +47,18 @@ const SEGMENTS = {
 
 const REST_PELVIS_HEIGHT = 0.86;
 
+// ---------- right-arm demo (Phase 3 bring-up: two IMU nodes on the right arm) ----------
+// The full-body model is still built. Segments outside DEMO_SEGMENTS are hidden,
+// or drawn as a faint ghost when "Body outline" is on.
+const DEMO_SEGMENTS = new Set(["r_upper_arm", "r_forearm"]);
+
+// Where the two wearable nodes sit (see HARDWARE.md, "Placement for step 1").
+// along = fraction of the segment length from the proximal joint.
+const SENSOR_NODES = [
+  { id: 1, joint: "r_shoulder", seg: "r_upper_arm", along: 0.5 },  // outside of upper arm
+  { id: 2, joint: "r_elbow",    seg: "r_forearm",   along: 0.8 },  // back of forearm near wrist
+];
+
 // ---------- rotation helpers (right-handed, matching numpy Rx/Ry/Rz) ----------
 
 function Rx(a) { const m = new THREE.Matrix4(); m.makeRotationX(a); return m; }
@@ -73,28 +87,73 @@ class Human {
     }
 
     // Attach one box per segment, offset along local Z.
+    this.ghostMeshes = [];
     for (const [segName, s] of Object.entries(SEGMENTS)) {
       const geom = new THREE.BoxGeometry(s.W, s.D, s.L);
-      // Simple flat colour so the look matches matplotlib.
+      const inDemo = DEMO_SEGMENTS.has(segName);
+      // Simple flat colour so the look matches matplotlib. Non-demo segments
+      // become a faint see-through ghost.
       const mat = new THREE.MeshStandardMaterial({
-        color: s.color, roughness: 0.85, metalness: 0.0,
+        color: inDemo ? s.color : 0x8b949e, roughness: 0.85, metalness: 0.0,
+        transparent: !inDemo, opacity: inDemo ? 1.0 : 0.07, depthWrite: inDemo,
       });
       const mesh = new THREE.Mesh(geom, mat);
       const sign = s.dir === "up" ? 1 : -1;
       // Box is centered on its origin; shift so its near end sits at joint + inset.
       mesh.position.z = sign * (s.inset + s.L / 2);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
+      mesh.castShadow = inDemo;
+      mesh.receiveShadow = inDemo;
 
       // Faint edges so segments read clearly against the dark background.
       const edges = new THREE.LineSegments(
         new THREE.EdgesGeometry(geom),
-        new THREE.LineBasicMaterial({ color: 0x0d1117, transparent: true, opacity: 0.6 }),
+        new THREE.LineBasicMaterial({
+          color: inDemo ? 0x0d1117 : 0x8b949e, transparent: true, opacity: inDemo ? 0.6 : 0.25,
+        }),
       );
       mesh.add(edges);
 
+      if (!inDemo) {
+        mesh.visible = false;
+        this.ghostMeshes.push(mesh);
+      }
       this.jointGroups[s.joint].add(mesh);
     }
+
+    // Hinge markers at the shoulder and elbow.
+    for (const [joint, r] of [["r_shoulder", 0.034], ["r_elbow", 0.028]]) {
+      const hinge = new THREE.Mesh(
+        new THREE.SphereGeometry(r, 24, 16),
+        new THREE.MeshStandardMaterial({ color: 0x8b949e, roughness: 0.6 }),
+      );
+      hinge.castShadow = true;
+      this.jointGroups[joint].add(hinge);
+    }
+
+    // IMU node boxes strapped to the arm, each with its sensor axes (x red, y green, z blue).
+    for (const n of SENSOR_NODES) {
+      const s = SEGMENTS[n.seg];
+      const node = new THREE.Group();
+      node.position.set(s.W / 2 + 0.013, 0, -(s.inset + s.L * n.along));
+      const body = new THREE.Mesh(
+        new THREE.BoxGeometry(0.024, 0.036, 0.052),
+        new THREE.MeshStandardMaterial({ color: 0x2b3138, roughness: 0.5 }),
+      );
+      body.castShadow = true;
+      const led = new THREE.Mesh(
+        new THREE.SphereGeometry(0.0055, 12, 8),
+        new THREE.MeshBasicMaterial({ color: 0x3fb950 }),
+      );
+      led.position.set(0.0125, 0, 0.015);
+      const axes = new THREE.AxesHelper(0.085);
+      axes.position.x = 0.013;
+      node.add(body, led, axes);
+      this.jointGroups[n.joint].add(node);
+    }
+  }
+
+  setGhost(on) {
+    for (const m of this.ghostMeshes) m.visible = on;
   }
 
   resetPose() {
@@ -166,11 +225,55 @@ function squat(t) {
   return pose;
 }
 
-const MOVEMENTS = [
+// Smooth 0 -> 1 -> 0 profile, one cycle per `period` seconds.
+function cycle01(t, period) {
+  return (1.0 - Math.cos((2 * Math.PI * t) / period)) / 2.0;
+}
+
+// Elbow flexion 0 -> 135 deg: the first thing the two arm nodes will measure.
+function elbowCurl(t) {
+  const d = cycle01(t, 3.0);
+  return { r_elbow: Rx(THREE.MathUtils.degToRad(135) * d) };
+}
+
+// Shoulder flexion: raise the straight arm forward to 150 deg.
+function armRaise(t) {
+  const d = cycle01(t, 3.0);
+  return {
+    r_shoulder: Rx(THREE.MathUtils.degToRad(150) * d),
+    r_elbow: Rx(THREE.MathUtils.degToRad(10) * d),
+  };
+}
+
+// Shoulder abduction: raise the arm sideways to 90 deg.
+function sideRaise(t) {
+  const d = cycle01(t, 3.0);
+  return { r_shoulder: Ry(THREE.MathUtils.degToRad(-90) * d) };
+}
+
+// Full-body movements (not shown in the right-arm demo, kept for later).
+const FULL_BODY_MOVEMENTS = [
   { key: "wave",  label: "Waving right arm", fn: waveArm },
   { key: "squat", label: "Squatting",        fn: squat  },
 ];
+
+// Right-arm demo movements.
+const MOVEMENTS = [
+  { key: "curl",  label: "Elbow curl",              fn: elbowCurl },
+  { key: "raise", label: "Arm raise (forward)",     fn: armRaise  },
+  { key: "side",  label: "Side raise (abduction)",  fn: sideRaise },
+  { key: "wave",  label: "Wave",                    fn: waveArm   },
+];
 const CYCLE_SECONDS = 6.0;
+
+// Rotation angle of a joint's local rotation (degrees), i.e. how far the child
+// segment is rotated relative to its parent. For the elbow this is what the two
+// IMU nodes give via q_UF = q_WU^-1 * q_WF.
+function jointAngleDeg(mat) {
+  const e = mat.elements;
+  const c = Math.min(1, Math.max(-1, (e[0] + e[5] + e[10] - 1) / 2));
+  return THREE.MathUtils.radToDeg(Math.acos(c));
+}
 
 // ---------- Three.js scene setup ----------
 
@@ -186,14 +289,15 @@ const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0x0d1117, 6, 18);
 
 // Z-up world (matches the Python coord convention).
-const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
+// Framed on the right arm, seen from the front-right.
+const camera = new THREE.PerspectiveCamera(35, 1, 0.05, 100);
 camera.up.set(0, 0, 1);
-camera.position.set(0, 4.5, 1.4);
+camera.position.set(1.75, 2.35, 1.75);
 
 const controls = new OrbitControls(camera, canvas);
-controls.target.set(0, 0, 0.95);
+controls.target.set(0.2, 0, 1.25);
 controls.enableDamping = true;
-controls.minDistance = 2;
+controls.minDistance = 0.8;
 controls.maxDistance = 10;
 
 // Lights.
@@ -232,11 +336,21 @@ const human = new Human(scene);
 let mode = "cycle";
 const moveLabel = document.getElementById("move");
 const timeLabel = document.getElementById("time");
-const btns = document.querySelectorAll("#controls button");
+const elbowLabel = document.getElementById("elbow");
+const shoulderLabel = document.getElementById("shoulder");
+const btns = document.querySelectorAll("#controls button[data-move]");
 btns.forEach(btn => btn.addEventListener("click", () => {
   mode = btn.dataset.move;
   btns.forEach(b => b.classList.toggle("active", b === btn));
 }));
+
+let ghost = false;
+const ghostBtn = document.getElementById("ghost");
+ghostBtn.addEventListener("click", () => {
+  ghost = !ghost;
+  human.setGhost(ghost);
+  ghostBtn.classList.toggle("active", ghost);
+});
 
 // ---------- animation loop ----------
 
@@ -270,6 +384,8 @@ function tick() {
 
   moveLabel.textContent = currentMove.label;
   timeLabel.textContent = `t = ${t.toFixed(2)} s`;
+  elbowLabel.textContent = `${jointAngleDeg(human.jointLocalRot.r_elbow).toFixed(0)}°`;
+  shoulderLabel.textContent = `${jointAngleDeg(human.jointLocalRot.r_shoulder).toFixed(0)}°`;
 
   controls.update();
   renderer.render(scene, camera);

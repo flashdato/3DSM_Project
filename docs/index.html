@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Sensor 3D Modeler — Live Demo</title>
+  <title>Sensor 3D Modeler — Right Arm Demo</title>
   <style>
     :root {
       color-scheme: dark;
@@ -35,9 +35,30 @@
     }
     #hud .move { color: var(--text); font-weight: 600; }
     #hud .time { color: var(--muted); font-size: 0.8rem; margin-top: 3px; }
+    #hud .angles { display: grid; grid-template-columns: auto auto; gap: 2px 14px;
+      margin-top: 8px; font-size: 0.85rem; }
+    #hud .angles span:nth-child(odd) { color: var(--muted); }
+    #hud .angles span:nth-child(even) { font-variant-numeric: tabular-nums; text-align: right; }
+    #nodes {
+      position: absolute; left: 16px; top: 16px;
+      background: rgba(22, 27, 34, 0.75); backdrop-filter: blur(6px);
+      border: 1px solid #21262d; border-radius: 8px;
+      padding: 10px 14px; font-size: 0.8rem; color: var(--muted); line-height: 1.6;
+    }
+    #nodes b { color: var(--text); font-weight: 600; }
+    #nodes .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+      background: #3fb950; margin-right: 6px; }
+    #nodes .axes { margin-top: 4px; }
+    #nodes .x { color: #ff5555; } #nodes .y { color: #55dd55; } #nodes .z { color: #5599ff; }
     #controls {
       position: absolute; right: 16px; bottom: 16px;
-      display: flex; gap: 8px;
+      display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end;
+      max-width: calc(100% - 240px);
+    }
+    @media (max-width: 640px) {
+      #controls { left: 16px; right: 16px; bottom: 120px; max-width: none; justify-content: flex-start; }
+      #nodes { font-size: 0.72rem; }
+      header .sub { display: none; }
     }
     button {
       background: var(--panel); color: var(--text);
@@ -59,25 +80,37 @@
     <header>
       <div>
         <h1>Sensor 3D Modeler</h1>
-        <div class="sub">Live browser demo — 10-segment kinematic human model, Three.js</div>
+        <div class="sub">Right-arm demo: 2 wearable IMU nodes (upper arm + forearm), Three.js</div>
       </div>
       <a href="https://github.com/flashdato/3DSM_Project" target="_blank" rel="noopener">source on GitHub</a>
     </header>
     <div id="stage">
       <canvas id="c"></canvas>
+      <div id="nodes">
+        <div><span class="dot"></span><b>Node 1</b> · right upper arm</div>
+        <div><span class="dot"></span><b>Node 2</b> · right forearm</div>
+        <div class="axes">sensor axes <span class="x">x</span> <span class="y">y</span> <span class="z">z</span></div>
+      </div>
       <div id="hud">
         <div class="move" id="move">—</div>
         <div class="time" id="time">t = 0.00 s</div>
+        <div class="angles">
+          <span>Elbow</span><span id="elbow">0°</span>
+          <span>Shoulder</span><span id="shoulder">0°</span>
+        </div>
       </div>
       <div id="controls">
+        <button data-move="curl">Elbow curl</button>
+        <button data-move="raise">Arm raise</button>
+        <button data-move="side">Side raise</button>
         <button data-move="wave">Wave</button>
-        <button data-move="squat">Squat</button>
         <button data-move="cycle" class="active">Auto-cycle</button>
+        <button id="ghost" title="Show the rest of the body as a faint outline">Body outline</button>
       </div>
     </div>
     <footer>
       <span>drag to rotate · scroll to zoom · right-drag to pan</span>
-      <span>Phase 1 of the sensor-fusion masters project</span>
+      <span>Phase 3 hardware bring-up · full-body model hidden for this demo</span>
     </footer>
   </div>
 

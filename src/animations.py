@@ -28,6 +28,35 @@ def squat(t):
     return pose
 
 
+def _cycle01(t, period):
+    """Smooth 0 -> 1 -> 0 profile, one cycle per `period` seconds."""
+    return (1.0 - np.cos(2 * np.pi * t / period)) / 2.0
+
+
+def elbow_curl(t):
+    """Right elbow flexion 0 -> 135 deg: the first thing the two arm IMU nodes measure."""
+    return {"r_elbow": Rx(np.deg2rad(135) * _cycle01(t, 3.0))}
+
+
+def arm_raise(t):
+    """Right shoulder flexion: straight arm raised forward to 150 deg."""
+    d = _cycle01(t, 3.0)
+    return {"r_shoulder": Rx(np.deg2rad(150) * d), "r_elbow": Rx(np.deg2rad(10) * d)}
+
+
+def side_raise(t):
+    """Right shoulder abduction: arm raised sideways to 90 deg."""
+    return {"r_shoulder": Ry(np.deg2rad(-90) * _cycle01(t, 3.0))}
+
+
+def joint_angle_deg(R):
+    """Rotation angle of a local joint rotation, i.e. how far the child segment is
+    rotated relative to its parent. For the elbow this is what two IMU nodes give
+    via q_UF = q_WU^-1 * q_WF."""
+    c = np.clip((np.trace(R) - 1.0) / 2.0, -1.0, 1.0)
+    return float(np.degrees(np.arccos(c)))
+
+
 def ground_lock(model):
     """Shift pelvis vertically so the lowest shin corner sits at z=0."""
     world = model.forward_kinematics()

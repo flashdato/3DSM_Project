@@ -50,26 +50,36 @@ will later be driven from a sensor, with no code changes to the renderer.
 
 ---
 
-## Phase 3 — Single Real Sensor
+## Phase 3 — First Real Sensors (right arm)
 
-**Goal:** get one physical IMU driving one limb of the model. Prove the full
-loop end-to-end: hardware → wire → parser → renderer.
+**Goal:** get physical IMUs driving the right arm of the model. Prove the full
+loop end-to-end: hardware → radio → receiver → parser → renderer.
+Details: [`HARDWARE.md`](HARDWARE.md).
 
-- Choose the IMU: **BNO055** (Bosch, has on-chip sensor fusion, exposes
-  quaternion directly — removes the need for a filter on day one) or
-  **MPU-9250** (cheaper, but requires implementing Madgwick/Mahony ourselves).
-- Micro: **ESP32** — reads IMU over I²C, streams `{timestamp, quaternion}`
-  either over USB serial or BLE / Wi-Fi UDP.
-- Python bridge: `sensor_bridge.py` reads the stream, converts the sensor
-  frame to the corresponding joint frame, injects it into the Phase 2 pipeline
-  as the pose for a single limb (e.g., right forearm), leaves the rest at
-  rest.
-- Calibration routine: hold limb in a known pose, capture the offset
-  quaternion so subsequent readings are relative to the model's rest frame.
+- **Node:** one **ESP32 + GY-87 (MPU-6050)** + LiPo per body segment. Raw
+  accelerometer + gyroscope at 100 Hz (200 Hz possible), timestamped at the
+  MPU-6050 data-ready interrupt. No on-chip fusion: orientation filters run on
+  the host so they can be compared on the same recordings.
+- **Radio:** **ESP-NOW** from each node to a **receiver ESP32** on the laptop's
+  USB (no router needed). The receiver broadcasts a **time beacon** every second.
+  Nodes sync their clocks to it, so samples from different limbs share one
+  timeline.
+- **Step 1:** 2 nodes, right upper arm + right forearm → elbow angle from the
+  relative rotation of the two segments. Firmware in `firmware/`, recorder in
+  `tools/log_serial.py`.
+- **Next:** Python bridge that converts raw counts to units, runs an
+  orientation filter per node, maps sensor frame → segment frame and drives the
+  right arm of the model live.
+- Calibration routine: stand in the N-pose (arms hanging) for 3 s and capture the
+  sensor-to-segment offset, so later readings are relative to the model's rest
+  frame.
+- First measurements: 15-min static recording (real gyro bias/noise for the
+  simulator's noise model), tap test for time-sync error, elbow flexion vs
+  protractor.
 
-**Definition of done:** rotating the physical IMU by hand rotates the
-corresponding limb on screen in real time, with acceptable latency
-(< 100 ms) and no obvious drift over a few minutes.
+**Definition of done:** moving the real arm moves the model's right arm on
+screen in real time, with acceptable latency (< 100 ms), node-to-node sync
+error well under one sample period, and no obvious drift over a few minutes.
 
 ---
 
@@ -82,10 +92,14 @@ consistency.
 - Sensor layout: 6–7 IMUs — pelvis (root), both thighs, both shins, both
   upper arms (optionally forearms). Head + torso can share one, or be
   derived from the pelvis sensor.
-- Hardware options:
-  - Multiple ESP32s each with one IMU, syncing over Wi-Fi/UDP to a hub.
-  - Or one ESP32 driving an I²C mux (TCA9548A) to talk to several IMUs
-    through the same bus.
+- Hardware (chosen): one wireless ESP32 + IMU + battery node per segment,
+  up to **10 nodes** (pelvis, chest, both upper arms, forearms, thighs, shins),
+  ESP-NOW to the receiver ESP32 with beacon time sync, and a **Raspberry Pi**
+  hub for recording, filtering and the kinematic solver. At 10 nodes the ESP-NOW
+  PHY rate and batching and the receiver → host link need upgrading (see
+  HARDWARE.md, "Scaling to 10 nodes").
+  - Rejected alternative: one ESP32 with an I²C mux (TCA9548A). Long I²C wires
+    to the limbs are unreliable, and every GY-87 has the same I²C addresses.
 - Fusion approach — pick one, benchmark the others:
   - **Constraint-based** — take each IMU's independent orientation, then
     project through the kinematic tree so parent/child rotations are

@@ -123,10 +123,13 @@ class HumanModel:
                 world[j] = (pos, rot)
         return world
 
-    def get_segment_polygons(self):
+    def get_segment_polygons(self, only=None):
+        """Box faces per segment. `only` = optional set of segment names to draw."""
         world = self.forward_kinematics()
         out = []
         for name, spec in SEGMENTS.items():
+            if only is not None and name not in only:
+                continue
             j_pos, j_rot = world[spec["joint"]]
             local = self._local_corners[name]
             world_corners = (j_rot @ local.T).T + j_pos

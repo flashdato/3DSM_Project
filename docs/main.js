@@ -59,6 +59,48 @@ const SENSOR_NODES = [
   { id: 2, joint: "r_elbow",    seg: "r_forearm",   along: 0.8 },  // back of forearm near wrist
 ];
 
+// Sensor axes in the segment frame (columns): x toward the hand, y forward, z out of the skin.
+// Same as R_MOUNT in src/virtual_imu.py.
+const R_MOUNT = new THREE.Matrix4().makeBasis(
+  new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 1, 0), new THREE.Vector3(1, 0, 0));
+
+// ---------- virtual MPU-6050 (mirrors src/virtual_imu.py) ----------
+// Ideal signals from central differences on the animation, then the same
+// error model: fixed bias per node, white noise, int16 quantization.
+const G = 9.80665;
+const ACC_LSB = 4096;   // ±8 g
+const GYR_LSB = 32.8;   // ±1000 °/s
+const TEMP_RAW = Math.round((25 - 36.53) * 340);
+function gauss() {
+  const u = 1 - Math.random(), v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+const SENSOR_ERRORS = [   // placeholders until the v0.3 static recording
+  { gb: [0.8, -0.5, 0.3], ab: [0.012, -0.020, 0.008] },
+  { gb: [-0.6, 0.4, 1.1], ab: [-0.015, 0.010, 0.018] },
+];
+const clampI16 = x => Math.max(-32768, Math.min(32767, Math.round(x)));
+
+function simulateSensors(human, fn, t, h = 1e-3) {
+  const before = human.sensorPoses(fn(t - h));
+  const after = human.sensorPoses(fn(t + h));
+  const now = human.sensorPoses(fn(t));
+  const gW = new THREE.Vector3(0, 0, -G);
+  return now.map((s, i) => {
+    // angular rate in the sensor frame: q(t-h)^-1 * q(t+h) ≈ [1, omega*h]
+    const dq = before[i].q.clone().invert().multiply(after[i].q);
+    const sgn = dq.w < 0 ? -1 : 1;
+    const omega = new THREE.Vector3(dq.x, dq.y, dq.z).multiplyScalar(sgn / h);   // rad/s
+    const aW = after[i].p.clone().add(before[i].p).addScaledVector(s.p, -2).divideScalar(h * h);
+    const f = aW.sub(gW).applyQuaternion(s.q.clone().invert()).divideScalar(G);   // g
+    const e = SENSOR_ERRORS[i];
+    const acc = [f.x, f.y, f.z].map((v, k) => clampI16((v + e.ab[k] + 0.004 * gauss()) * ACC_LSB));
+    const gyr = [omega.x, omega.y, omega.z].map((v, k) =>
+      clampI16((THREE.MathUtils.radToDeg(v) + e.gb[k] + 0.05 * gauss()) * GYR_LSB));
+    return { acc, gyr, temp: TEMP_RAW + Math.round(3 * gauss()) };
+  });
+}
+
 // ---------- rotation helpers (right-handed, matching numpy Rx/Ry/Rz) ----------
 
 function Rx(a) { const m = new THREE.Matrix4(); m.makeRotationX(a); return m; }
@@ -130,13 +172,17 @@ class Human {
       this.jointGroups[joint].add(hinge);
     }
 
-    // IMU node boxes strapped to the arm, each with its sensor axes (x red, y green, z blue).
+    // IMU node boxes strapped to the arm. The node group IS the sensor frame
+    // (mounting as in HARDWARE.md: board flat on the outside of the limb,
+    // components out, X arrow toward the hand). Axes: x red, y green, z blue.
+    this.sensorGroups = [];
     for (const n of SENSOR_NODES) {
       const s = SEGMENTS[n.seg];
       const node = new THREE.Group();
       node.position.set(s.W / 2 + 0.013, 0, -(s.inset + s.L * n.along));
+      node.quaternion.setFromRotationMatrix(R_MOUNT);
       const body = new THREE.Mesh(
-        new THREE.BoxGeometry(0.024, 0.036, 0.052),
+        new THREE.BoxGeometry(0.052, 0.036, 0.024),
         new THREE.MeshStandardMaterial({ color: 0x2b3138, roughness: 0.5 }),
       );
       body.castShadow = true;
@@ -144,12 +190,24 @@ class Human {
         new THREE.SphereGeometry(0.0055, 12, 8),
         new THREE.MeshBasicMaterial({ color: 0x3fb950 }),
       );
-      led.position.set(0.0125, 0, 0.015);
+      led.position.set(-0.015, 0, 0.0125);
       const axes = new THREE.AxesHelper(0.085);
-      axes.position.x = 0.013;
+      axes.position.z = 0.013;
       node.add(body, led, axes);
       this.jointGroups[n.joint].add(node);
+      this.sensorGroups.push(node);
     }
+  }
+
+  // World position + orientation of each sensor frame for a given pose.
+  sensorPoses(poseDict) {
+    this.setPose(poseDict);
+    this.root.updateMatrixWorld(true);
+    return this.sensorGroups.map(g => {
+      const p = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+      g.matrixWorld.decompose(p, q, sc);
+      return { p, q };
+    });
   }
 
   setGhost(on) {
@@ -344,6 +402,95 @@ btns.forEach(btn => btn.addEventListener("click", () => {
   btns.forEach(b => b.classList.toggle("active", b === btn));
 }));
 
+const sensorCells = [1, 2].map(n =>
+  ["ax", "ay", "az", "gx", "gy", "gz", "acc", "gyr"].map(k => document.getElementById(`n${n}-${k}`)));
+const serialLine = document.getElementById("serial");
+let lastSensorT = -1;
+let sampleSeq = 0;
+let lastScopeT = -1;
+let latestOut = null;
+
+// ---------- live signal charts (converted from the simulated raw counts) ----------
+const SCOPE_SECONDS = 6;
+const SCOPE_HZ = 50;
+const AXIS_COLORS = ["#3987e5", "#d95926", "#199e70"];   // x, y, z (fixed order)
+const INK = "#e6edf3", MUTED = "#8b949e", GRID = "#21262d", ZERO = "#3a414a";
+const scopes = [
+  { id: "sc-1-acc", node: 0, key: "acc", range: 2.5, ticks: [-2, -1, 0, 1, 2], dec: 2 },
+  { id: "sc-1-gyr", node: 0, key: "gyr", range: 400, ticks: [-400, -200, 0, 200, 400], dec: 0 },
+  { id: "sc-2-acc", node: 1, key: "acc", range: 2.5, ticks: [-2, -1, 0, 1, 2], dec: 2 },
+  { id: "sc-2-gyr", node: 1, key: "gyr", range: 400, ticks: [-400, -200, 0, 200, 400], dec: 0 },
+].map(s => ({ ...s, canvas: document.getElementById(s.id), buf: [] }));
+
+function pushScopeSample(t, out) {
+  for (const sc of scopes) {
+    const s = out[sc.node];
+    const v = sc.key === "acc" ? s.acc.map(c => c / ACC_LSB) : s.gyr.map(c => c / GYR_LSB);
+    sc.buf.push({ t, v });
+    while (sc.buf.length && sc.buf[0].t < t - SCOPE_SECONDS) sc.buf.shift();
+  }
+}
+
+function drawScopes(t) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  for (const sc of scopes) {
+    const c = sc.canvas;
+    if (!c || !c.getContext) continue;
+    const w = c.clientWidth, h = c.clientHeight;
+    if (!w || !h) continue;
+    if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
+      c.width = Math.round(w * dpr);
+      c.height = Math.round(h * dpr);
+    }
+    const ctx = c.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const padL = 36, padR = 58, padT = 6, padB = 6;
+    const pw = w - padL - padR, ph = h - padT - padB;
+    const yOf = v => padT + ph / 2 - (Math.max(-sc.range, Math.min(sc.range, v)) / sc.range) * (ph / 2);
+    const xOf = tt => padL + ((tt - (t - SCOPE_SECONDS)) / SCOPE_SECONDS) * pw;
+
+    // recessive grid + tick labels
+    ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    for (const tk of sc.ticks) {
+      const y = Math.round(yOf(tk)) + 0.5;
+      ctx.strokeStyle = tk === 0 ? ZERO : GRID;
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + pw, y); ctx.stroke();
+      ctx.fillStyle = MUTED;
+      ctx.fillText(String(tk), padL - 6, y);
+    }
+
+    // x, y, z traces
+    ctx.lineWidth = 1.6;
+    ctx.lineJoin = "round";
+    for (let k = 0; k < 3; k++) {
+      ctx.strokeStyle = AXIS_COLORS[k];
+      ctx.beginPath();
+      sc.buf.forEach((b, i) => {
+        const x = xOf(b.t), y = yOf(b.v[k]);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+
+    // latest values: colored key dot + value in text ink
+    const last = sc.buf[sc.buf.length - 1];
+    if (last) {
+      ctx.textAlign = "left";
+      for (let k = 0; k < 3; k++) {
+        const y = padT + 10 + k * 14;
+        ctx.fillStyle = AXIS_COLORS[k];
+        ctx.beginPath(); ctx.arc(padL + pw + 10, y, 3, 0, 2 * Math.PI); ctx.fill();
+        ctx.fillStyle = INK;
+        ctx.fillText(last.v[k].toFixed(sc.dec), padL + pw + 17, y);
+      }
+    }
+  }
+}
+
 let ghost = false;
 const ghostBtn = document.getElementById("ghost");
 ghostBtn.addEventListener("click", () => {
@@ -378,6 +525,30 @@ function tick() {
     currentMove = MOVEMENTS.find(m => m.key === mode) || MOVEMENTS[0];
     localT = t;
   }
+
+  // Simulated sensor output: sampled at SCOPE_HZ for the charts; the number
+  // panel refreshes 10x per second so it stays readable.
+  if (t - lastScopeT >= 1 / SCOPE_HZ) {
+    lastScopeT = t;
+    latestOut = simulateSensors(human, currentMove.fn, localT);
+    pushScopeSample(t, latestOut);
+  }
+  if (latestOut && t - lastSensorT >= 0.1) {
+    lastSensorT = t;
+    sampleSeq += 10;
+    const out = latestOut;
+    out.forEach((s, i) => {
+      const cells = sensorCells[i];
+      [...s.acc, ...s.gyr].forEach((v, k) => { cells[k].textContent = v; });
+      cells[6].textContent = (s.acc.map(v => (v / ACC_LSB).toFixed(2)).join(" ")) + " g";
+      cells[7].textContent = (s.gyr.map(v => (v / GYR_LSB).toFixed(0)).join(" ")) + " °/s";
+    });
+    serialLine.textContent =
+      `D,1,2,${sampleSeq % 65536},${5000000 + Math.round(t * 1e6)},${out[0].acc.join(",")},` +
+      `${out[0].gyr.join(",")},0,0,0,${out[0].temp},1,3900,-45`;
+  }
+
+  drawScopes(t);
 
   human.setPose(currentMove.fn(localT));
   human.groundLock();

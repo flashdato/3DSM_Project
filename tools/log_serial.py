@@ -71,8 +71,8 @@ def main():
         "port": args.port,
         "baud": args.baud,
         "units": {
-            "acc": "counts; g = counts * acc_fs_g / 32768",
-            "gyr": "counts; deg/s = counts * gyr_fs_dps / 32768",
+            "acc": "counts; g = counts / (16384, 8192, 4096, 2048 for 2/4/8/16 g)",
+            "gyr": "counts; deg/s = counts / (131, 65.5, 32.8, 16.4 for 250/500/1000/2000 dps)",
             "temp": "counts; degC = counts / 340 + 36.53",
             "t_us": "microseconds, receiver clock when flags & 1 (SYNCED), else node clock",
             "rx_us": "microseconds, receiver clock at packet arrival",

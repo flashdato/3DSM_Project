@@ -187,8 +187,11 @@ identical copies, one per sketch). All fields are little-endian.
 | per sample: seq | u16 | sample counter |
 | per sample: acc[3], gyr[3], mag[3], temp | i16 | raw counts |
 
-Unit conversion on the host: `acc [g] = counts × acc_fs_g / 32768`,
-`gyr [°/s] = counts × gyr_fs_dps / 32768`, `temp [°C] = counts / 340 + 36.53`.
+Unit conversion on the host uses the MPU-6050 datasheet sensitivities, the same
+ones Adafruit_MPU6050 uses. `acc [g] = counts / LSB_acc` with LSB_acc = 16384 / 8192 /
+**4096** / 2048 for ±2 / 4 / **8** / 16 g. `gyr [°/s] = counts / LSB_gyr` with LSB_gyr =
+131 / 65.5 / **32.8** / 16.4 for ±250 / 500 / **1000** / 2000 °/s. `temp [°C] = counts / 340
++ 36.53`. **Bold** = our defaults. At rest, the axis pointing up reads **+1 g**.
 
 This covers the fields the project brief asks for (sensor ID, segment ID, timestamp,
 battery, signal quality via RSSI) plus the design's sequence number and status flags.
@@ -220,6 +223,7 @@ S,node,pkts_per_s,samples_per_s,lost_total,rssi,latency_ms,synced,batt_mv   (eve
 | 1 | `SEG_R_UPPER_ARM` | outside of the right upper arm, mid-way between shoulder and elbow | flat, little muscle movement |
 | 2 | `SEG_R_FOREARM` | back of the right forearm, just above the wrist | bony, so soft-tissue wobble is small |
 
+- **Board orientation (both nodes):** flat on the outside of the limb, components facing out, the board's **X arrow pointing toward the hand**. Sensor axes are then x = along the limb toward the hand, y = forward, z = out of the skin. With the arm hanging, the accelerometer reads about **(−1, 0, 0) g**, and elbow flexion shows up on **gyro z**. `src/virtual_imu.py` and the web demo use the same mounting.
 - **Mount them the same way every session.** The sensor-to-segment rotation `q_SB` is estimated from a calibration pose, but a consistent mount keeps it repeatable.
 - **Calibration pose:** stand still with arms hanging, palms facing the thighs, for 3 s at the start of each recording. That's the N-pose the model's rest pose uses.
 - **Without a chest node**, the upper arm's orientation is relative to the world, not the torso. That's fine for the first elbow experiments if the person stands still. The chest node should be the third one built.

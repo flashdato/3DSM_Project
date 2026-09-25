@@ -16,7 +16,32 @@
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    #root { display: grid; grid-template-rows: auto 1fr auto; height: 100%; }
+    #root { display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; height: 100%; }
+    #scope {
+      display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px;
+      padding: 10px 16px; border-top: 1px solid #21262d; background: var(--bg);
+    }
+    #scope .chart { background: var(--panel); border: 1px solid #21262d; border-radius: 8px;
+      padding: 8px 10px 6px; min-width: 0; }
+    #scope .ch-head { display: flex; justify-content: space-between; align-items: baseline;
+      gap: 8px; font-size: 0.76rem; color: var(--muted); margin-bottom: 4px; }
+    #scope .ch-head b { color: var(--text); font-weight: 600; }
+    #scope .lg { display: flex; gap: 8px; white-space: nowrap; }
+    #scope .lg i { font-style: normal; display: inline-flex; align-items: center; gap: 4px; }
+    #scope .lg i::before { content: ""; width: 10px; height: 2px; border-radius: 1px; background: currentColor; }
+    #scope .lg .x { color: #3987e5; } #scope .lg .y { color: #d95926; } #scope .lg .z { color: #199e70; }
+    #scope .lg i span { color: var(--muted); }
+    #scope canvas { display: block; width: 100%; height: 110px; }
+    #scope .note { grid-column: 1 / -1; font-size: 0.72rem; color: var(--muted); margin: -2px 2px 0; }
+    @media (max-width: 900px) { #scope { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    #scope .ch-head { flex-wrap: wrap; }
+    @media (max-width: 640px) {
+      #root { height: auto; min-height: 100%; }
+      #stage { height: 62vh; min-height: 360px; }
+      #scope { padding: 10px; gap: 8px; }
+      #scope canvas { height: 84px; }
+      #sensors, #nodes { display: none; }
+    }
     header {
       padding: 14px 20px; border-bottom: 1px solid #21262d;
       display: flex; align-items: center; justify-content: space-between; gap: 20px;
@@ -50,6 +75,24 @@
       background: #3fb950; margin-right: 6px; }
     #nodes .axes { margin-top: 4px; }
     #nodes .x { color: #ff5555; } #nodes .y { color: #55dd55; } #nodes .z { color: #5599ff; }
+    #sensors {
+      position: absolute; right: 16px; top: 16px; max-width: calc(100% - 290px);
+      background: rgba(22, 27, 34, 0.8); backdrop-filter: blur(6px);
+      border: 1px solid #21262d; border-radius: 8px; padding: 10px 14px;
+      font-size: 0.78rem; color: var(--muted);
+    }
+    #sensors .title { color: var(--text); font-weight: 600; font-size: 0.82rem; }
+    #sensors .sub { margin: 2px 0 6px; }
+    #sensors table { border-collapse: collapse; font-variant-numeric: tabular-nums;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    #sensors th { font-weight: 500; color: var(--muted); text-align: right; padding: 1px 0 1px 12px; }
+    #sensors td { text-align: right; padding: 1px 0 1px 12px; color: var(--text); min-width: 5.2ch; }
+    #sensors th:first-child, #sensors td:first-child { text-align: left; padding-left: 0; }
+    #sensors td.units { color: var(--muted); font-size: 0.72rem; padding-bottom: 5px; }
+    #sensors .grp { border-left: 1px solid #30363d; }
+    #sensors .serial { margin-top: 6px; overflow-x: auto; white-space: nowrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.7rem;
+      color: #7ee2a8; }
     #controls {
       position: absolute; right: 16px; bottom: 16px;
       display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end;
@@ -58,6 +101,8 @@
     @media (max-width: 640px) {
       #controls { left: 16px; right: 16px; bottom: 120px; max-width: none; justify-content: flex-start; }
       #nodes { font-size: 0.72rem; }
+      #sensors { left: 16px; right: 16px; top: 96px; max-width: none; overflow-x: auto; }
+      #sensors td.units, #sensors .serial { display: none; }
       header .sub { display: none; }
     }
     button {
@@ -91,6 +136,27 @@
         <div><span class="dot"></span><b>Node 2</b> · right forearm</div>
         <div class="axes">sensor axes <span class="x">x</span> <span class="y">y</span> <span class="z">z</span></div>
       </div>
+      <div id="sensors">
+        <div class="title">Simulated MPU-6050 output</div>
+        <div class="sub">raw counts the nodes send · ±8 g (4096/g) · ±1000 °/s (32.8 per °/s)</div>
+        <table>
+          <thead>
+            <tr><th></th><th>ax</th><th>ay</th><th>az</th>
+              <th class="grp">gx</th><th>gy</th><th>gz</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Node 1</td><td id="n1-ax">0</td><td id="n1-ay">0</td><td id="n1-az">0</td>
+              <td id="n1-gx" class="grp">0</td><td id="n1-gy">0</td><td id="n1-gz">0</td></tr>
+            <tr><td></td><td class="units" colspan="3" id="n1-acc">—</td>
+              <td class="units grp" colspan="3" id="n1-gyr">—</td></tr>
+            <tr><td>Node 2</td><td id="n2-ax">0</td><td id="n2-ay">0</td><td id="n2-az">0</td>
+              <td id="n2-gx" class="grp">0</td><td id="n2-gy">0</td><td id="n2-gz">0</td></tr>
+            <tr><td></td><td class="units" colspan="3" id="n2-acc">—</td>
+              <td class="units grp" colspan="3" id="n2-gyr">—</td></tr>
+          </tbody>
+        </table>
+        <div class="serial" id="serial" title="Node 1 as the receiver prints it">D,…</div>
+      </div>
       <div id="hud">
         <div class="move" id="move">—</div>
         <div class="time" id="time">t = 0.00 s</div>
@@ -108,6 +174,13 @@
         <button id="ghost" title="Show the rest of the body as a faint outline">Body outline</button>
       </div>
     </div>
+    <section id="scope" aria-label="Simulated sensor signals">
+      <div class="chart"><div class="ch-head"><span><b>Node 1</b> · upper arm · accel (g)</span><span class="lg"><i class="x"><span>x</span></i><i class="y"><span>y</span></i><i class="z"><span>z</span></i></span></div><canvas id="sc-1-acc"></canvas></div>
+      <div class="chart"><div class="ch-head"><span><b>Node 1</b> · upper arm · gyro (°/s)</span><span class="lg"><i class="x"><span>x</span></i><i class="y"><span>y</span></i><i class="z"><span>z</span></i></span></div><canvas id="sc-1-gyr"></canvas></div>
+      <div class="chart"><div class="ch-head"><span><b>Node 2</b> · forearm · accel (g)</span><span class="lg"><i class="x"><span>x</span></i><i class="y"><span>y</span></i><i class="z"><span>z</span></i></span></div><canvas id="sc-2-acc"></canvas></div>
+      <div class="chart"><div class="ch-head"><span><b>Node 2</b> · forearm · gyro (°/s)</span><span class="lg"><i class="x"><span>x</span></i><i class="y"><span>y</span></i><i class="z"><span>z</span></i></span></div><canvas id="sc-2-gyr"></canvas></div>
+      <div class="note">Last 6 s of simulated MPU-6050 data, converted from the raw counts above (±8 g → ÷4096, ±1000 °/s → ÷32.8). Includes the simulated bias and noise. Same generator as src/virtual_imu.py.</div>
+    </section>
     <footer>
       <span>drag to rotate · scroll to zoom · right-drag to pan</span>
       <span>Phase 3 hardware bring-up · full-body model hidden for this demo</span>

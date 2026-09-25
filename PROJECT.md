@@ -77,7 +77,8 @@ with `--full` (Python) or "Body outline" (web).
 ├── src/                   # Python dev version (matplotlib)
 │   ├── human_model.py     # kinematic tree, forward kinematics, box rendering
 │   ├── animations.py      # joint trajectories (right-arm set, wave, squat) + helpers
-│   └── main.py            # 3D animation loop (right arm by default, --full)
+│   ├── main.py            # 3D animation loop (right arm by default, --full)
+│   └── virtual_imu.py     # simulated MPU-6050 raw data from model motion
 ├── firmware/              # Arduino sketches (ESP32)
 │   ├── sensor_node/       # worn node: MPU-6050 sampling, beacon sync, ESP-NOW send
 │   └── receiver/          # USB receiver: time beacons, decode, CSV over serial
@@ -106,6 +107,7 @@ python src/main.py                               # right-arm demo
 python src/main.py --full                        # full-body demo
 python src/main.py --snapshot arm.png --t 1.5    # save one frame, no window
 python tools/log_serial.py --port /dev/ttyUSB0   # record from the receiver ESP32
+python src/virtual_imu.py --move all --plot       # simulated recording (same format)
 ```
 
 **Web demo, local preview:** `cd docs && python -m http.server 8000`, then open

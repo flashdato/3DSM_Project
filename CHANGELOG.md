@@ -5,6 +5,17 @@ Everything older lives here.
 
 ---
 
+## Unreleased (v0.3 in progress)
+
+**Added**
+- `src/virtual_imu.py`: simulated MPU-6050 output from the model's motion. It computes ideal accel/gyro by central differences on the animation, adds per-node bias, noise, int16 quantization and optional packet loss, and writes the **same `imu_raw.csv` format as a real recording**, plus `truth.csv` (ideal signals, true orientation, joint angles), `meta.json` and an optional `signals.png`.
+- Web demo: live **Simulated MPU-6050 output** panel with raw counts per node (and the receiver's `D,...` line), plus 4 scrolling charts (accel and gyro per node, last 6 s) drawn from the same simulated numbers. Node boxes now show the real board orientation.
+
+**Changed**
+- Unit conversion uses the datasheet sensitivities (gyro ±1000 °/s = 32.8 LSB per °/s, not 32768/1000). Board mounting convention defined in `HARDWARE.md`.
+
+---
+
 ## v0.2 — Hardware bring-up plan · 2026-09-25
 
 **Direction.** IMU-only, following the professor's research design: simulation and

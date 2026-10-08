@@ -10,35 +10,46 @@ Wearable IMUs on each body segment, fused with a kinematic body model to reconst
 
 <!-- VERSION START: replace this block on every release; older versions go to CHANGELOG.md -->
 
-## Current version: v0.2 — Hardware bring-up plan
+## Current version: v0.4 — Wireless IMU + per-sensor box & arm viz
 
-*25 Sep 2026*
+*8 Oct 2026*
 
-### Progress so far
+Real GY-87 hardware now drives the model wirelessly. Mounting calibration is
+learned once per sensor and persisted, so launches start in LIVE mode.
 
-- **Phase 1 is done.** The articulated body model with forward kinematics runs in Python and in the browser (live demo above).
-- **Direction is fixed: IMU-only.** It follows the professor's research design: simulation and quantitative checks first, real sensors next, fusion after that, and the health/activity application last.
-- **Hardware is designed.** Each body segment gets its own wireless node (ESP32 + GY-87 / MPU-6050 + LiPo), and the nodes send raw data over ESP-NOW to a receiver ESP32. The receiver broadcasts a time beacon every second so all nodes share one clock. Details are in [`HARDWARE.md`](HARDWARE.md).
-- **Firmware and recorder are written.** The node and receiver sketches compile for ESP32 and ESP32-S3, and `tools/log_serial.py` saves sessions to `recordings/`. They haven't run on real boards yet.
-- **The demo is now right-arm only.** It shows the upper arm and forearm with the two IMU nodes, live elbow and shoulder angles, and four moves: elbow curl, arm raise, side raise and wave.
+![Box visualizer](docs/images/box_viz.png)
 
-### Next: v0.3 plan
+![Arm visualizer](docs/images/arm_viz.png)
 
-**Hardware track (2 nodes, right arm)**
-1. Build the 2 nodes and the receiver, flash them, and confirm 100 samples/s per node with 0 lost and both nodes synced.
-2. Make a 15-minute static recording to get the real gyro bias and noise.
-3. Run a tap test to measure node-to-node sync error, at the start and after 10 minutes.
-4. Record elbow flexion 0→90→0° against a protractor.
+### What works end-to-end
 
-**Software track (runs in parallel)**
-1. Quaternion utilities with unit tests.
-2. A virtual IMU generator that turns the demo animations into synthetic accel/gyro data with configurable bias and noise, using the numbers from hardware step 2.
-3. An orientation filter (complementary first) and the N-pose sensor-to-segment calibration.
-4. A Python bridge that plays back a recording or live stream on the model's right arm.
-5. The first metrics: orientation error and elbow-angle error against ground truth.
+- **ESP-NOW link.** `firmware/esp32_sensor_now/` (worn, battery-powered) streams
+  raw IMU over broadcast ESP-NOW at 200 Hz. `firmware/esp32_receiver_now/`
+  (USB-tethered) prints to the host at 1 Mbaud. No pairing — a power-cycled
+  sensor is live again the moment it boots, and the receiver prints
+  `# node X online (seq N)` on first packet.
+- **Multi-node ready.** Each sensor stamps a compile-time `NODE_ID`; the
+  receiver tracks per-node sequence and drop counts.
+- **Box visualizer** (`tools/visualize_box_gy87.py`). Press 1-6 while a face is
+  down to teach the sensor-to-box mounting; a Kabsch solver turns the six
+  accel vectors into `R_sb`. A Mahony-style accel+gyro complementary filter
+  (no mag — the clone QMC5883P is unusable) then drives the live box through
+  flips, rolls and spins without the yaw-pole flickering a pure "shortest
+  rotation" would have. Gyro bias is calibrated both at firmware boot and
+  refined online when the box is stationary. Mounting persists to
+  `calibrations/box_calib_node<N>.json`.
+- **Arm visualizer** (`tools/visualize_arm_now.py`). Loads the box tool's
+  `R_sb`, runs the same filter, and drives the HumanModel's right shoulder.
+  Two-key anchor: `c` captures rest, `t` captures a forward-raise 90° and
+  solves the yaw correction so your physical forward lines up with
+  HumanModel's +Y. Both save to `calibrations/arm_rest_node<N>.json` and
+  auto-load next launch — one-and-done per strap setup.
 
-**Done when:** moving the real arm moves the model's right arm on screen with under
-100 ms latency, and the elbow angle error has a measured number.
+### Next
+
+- Validate elbow / wrist nodes alongside the shoulder sensor.
+- Multi-sensor concurrent streaming test (per-node Kabsch + anchor).
+- Measurement runs vs. protractor (shoulder angle error, elbow angle error).
 
 <!-- VERSION END -->
 

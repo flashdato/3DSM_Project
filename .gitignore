@@ -14,3 +14,9 @@ Professor_Materials_Summary.html
 
 # IDE settings
 .idea/
+
+# Claude context notes (local only, never publish)
+CLAUDE_NOTES.md
+
+# Per-sensor calibration (user-specific, generated at runtime)
+calibrations/

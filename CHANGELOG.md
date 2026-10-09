@@ -5,6 +5,79 @@ Everything older lives here.
 
 ---
 
+## v0.5 — Two-arm live tracking + guided calibration + drift-free rest-anchor · 2026-10-09
+
+Second IMU node is live on the right upper arm; the right arm's shoulder *and*
+elbow are now driven by sensors in real time. Calibration was rewritten as a
+3-pose guided flow with a ghost preview on the viewer, and the gyro-only yaw
+drift that was manifesting as the elbow "curling by itself" after a few motion
+cycles is now zeroed out automatically every time the arm returns to rest.
+
+**Added**
+- `tools/visualize_arm_now.py`: full rewrite for two concurrent nodes.
+  Per-node `R_sb`, Mahony filter, `rest_W`, `yaw_rad`. Node 2 (upper arm)
+  drives `r_shoulder`; node 1 (forearm) drives `r_elbow` computed as
+  `r_shoulder.T @ delta_forearm` so the forearm's world-frame rotation
+  becomes an elbow-local rotation (parent-chain consistency).
+- 3-pose guided calibration: keys `1`=REST, `2`=FORWARD-90°, `3`=SIDE-90°.
+  Each a 2-second averaged capture (first 0.5s discarded so the Mahony
+  filter has time to settle). Target pose drawn as a green translucent
+  ghost arm overlaid on the HumanModel; the live model stays in rest pose
+  during calibration so the user focuses on matching the ghost. Yaw per
+  node is solved from the circular mean of two independent axis alignments
+  (FORWARD delta's rotation axis → +X, SIDE delta's rotation axis → -Y) —
+  robust to small arm-position errors.
+- **Auto re-anchor at rest** — the drift fix. For each node, detect
+  (|a| ≈ 1g, |gyro| < 10 °/s) AND (accel direction in box frame matches
+  stored rest reference within ~11° cosine). When both nodes satisfy this
+  for 0.5 s with a 2 s cooldown, re-anchor: `W_0 ← current filter W` and
+  `yaw += -atan2(M[1,0], M[0,0])` where `M = W_new @ W_old.T`. Math is
+  exact: δθ (accumulated filter yaw drift) is readable from M and the two
+  updates together make the delta formula return `R_WL` cleanly from the
+  anchor forward. Rest detection uses raw accel (not filter W), so it
+  stays reliable regardless of drift.
+
+**Changed**
+- Receiver CSV format: each sample line now prefixed with `D,<node_id>,` so
+  interleaved streams from multiple nodes route correctly on the host.
+  `tools/visualize_box_gy87.py` parses both old and new formats; the arm
+  viewer uses the new format exclusively. Receiver re-flash required once.
+- `tools/visualize_box_gy87.py`: display switched from Mahony-filter-driven
+  to accel-only. The previous display picked an arbitrary yaw on each face
+  capture (filter init math) which looked like the rendered box was
+  "wrong" even when `R_sb` was correct. Yaw rotation around world +Z is
+  not observable from accel alone (and there's no magnetometer), so the
+  display convention is now explicit about this instead of pretending to
+  know.
+- Mahony filter in the arm viewer: accel-based pitch/roll correction is
+  now gated to `0.85 < |a| < 1.15`. Previously the correction ran every
+  tick, so during arm motion the filter was being fed `gravity +
+  linear_accel` as if it were pure gravity — perturbing the quaternion
+  differently per sensor (upper arm and forearm swing through different
+  arcs) and *contributing* to the elbow-curl drift.
+
+**Fixed**
+- Interleaved samples from two concurrent nodes no longer get mis-routed
+  (receiver now tags node_id per line).
+- Elbow "curling by itself" over motion is largely eliminated by
+  auto-re-anchor (verified by user: "much much better... much more stable").
+
+**Known limitations**
+- Strap slippage during motion: the sensor shifts on the arm between
+  rest-returns, changing the mounting rotation that the calibration
+  assumed. No software fix — needs mounting hardware (3D-printed cradle +
+  wide elastic strap, or sewn-in pocket on a compression sleeve).
+- Residual yaw drift between rest-returns (gyro bias, scale factor).
+  Magnetometer would eliminate it; deferred.
+
+**Verified**
+- Both ESP-NOW nodes online simultaneously, receiver tagging node_id per
+  sample.
+- Live model mirrors shoulder + elbow motion in real time; auto-re-anchor
+  resets accumulated drift when the arm returns to rest.
+
+---
+
 ## v0.4 — Wireless IMU + per-sensor box & arm viz · 2026-10-08
 
 Real GY-87 hardware is now driving the model wirelessly, and a two-step

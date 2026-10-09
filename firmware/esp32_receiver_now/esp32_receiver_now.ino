@@ -2,13 +2,14 @@
 // ESP-NOW receiver that forwards sensor samples to the PC over USB serial.
 // Pair with esp32_sensor_now.ino on each wireless sensor node.
 //
-// --- Serial output format (matches the Python box visualizer) ---
+// --- Serial output format ---
 //   One CSV data line per IMU sample:
-//     qw,qx,qy,qz,ax,ay,az,gx,gy,gz,mx,my,mz
-//   Quaternion is set to identity and mag to 0 — the Python side runs its own
-//   accel+gyro complementary filter and does not use either channel. Node ID
-//   appears in "# node X ..." comment lines interleaved with the stream so a
-//   future multi-node version can be added without breaking the CSV parser.
+//     D,<node_id>,qw,qx,qy,qz,ax,ay,az,gx,gy,gz,mx,my,mz
+//   The leading "D" tag distinguishes data lines from "# ..." comments at a
+//   glance; node_id lets the host route samples to the correct per-node
+//   filter + calibration when several sensors stream at once. Quaternion is
+//   identity and mag is 0 — the Python side runs its own accel+gyro
+//   complementary filter and does not use either channel.
 //
 // --- Baud ---
 //   1,000,000 — set --baud 1000000 on the Python side.
@@ -91,7 +92,8 @@ static void onReceive(const uint8_t *mac, const uint8_t *data, int len) {
   const SampleRaw *samples = (const SampleRaw*)(data + sizeof(PacketHeader));
   for (int i = 0; i < p->n_samples; i++) {
     const SampleRaw &s = samples[i];
-    Serial.printf("1,0,0,0,%.4f,%.4f,%.4f,%.2f,%.2f,%.2f,0,0,0\n",
+    Serial.printf("D,%u,1,0,0,0,%.4f,%.4f,%.4f,%.2f,%.2f,%.2f,0,0,0\n",
+                  (unsigned)p->node_id,
                   s.ax / a_lsb, s.ay / a_lsb, s.az / a_lsb,
                   s.gx / g_lsb, s.gy / g_lsb, s.gz / g_lsb);
   }
@@ -119,8 +121,8 @@ void setup() {
 
   Serial.printf("# receiver ready  ch=%u  baud=%u\n", WIFI_CHANNEL, BAUD);
   Serial.printf("# own MAC: %s\n", WiFi.macAddress().c_str());
-  Serial.println("# format: qw,qx,qy,qz,ax,ay,az,gx,gy,gz,mx,my,mz "
-                 "(quat=identity, mag=0; see '# node X online' lines)");
+  Serial.println("# format: D,node_id,qw,qx,qy,qz,ax,ay,az,gx,gy,gz,mx,my,mz "
+                 "(quat=identity, mag=0)");
 }
 
 void loop() {

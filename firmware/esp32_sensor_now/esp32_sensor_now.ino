@@ -36,7 +36,7 @@ static const uint8_t  GYR_FS_SEL      = 2;    // +/- 1000 dps
 static const uint16_t SAMPLE_HZ       = 200;  // IMU read rate
 static const uint8_t  SAMPLES_PER_PKT = 4;    // => 50 Hz packet rate
 static const uint8_t  WIFI_CHANNEL    = 1;
-static const uint8_t  NODE_ID         = 1;    // change per sensor
+static const uint8_t  NODE_ID         = 1;    // change per sensor (1=forearm, 2=upper arm)
 
 static const uint8_t BCAST[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 

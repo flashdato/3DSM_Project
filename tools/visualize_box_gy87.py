@@ -106,13 +106,25 @@ def reader_thread(ser, pose, stop, data_ready=None, node_state=None):
                 node_state["id"] = int(m.group(1))
             continue
         parts = line.split(",")
-        if len(parts) < 10:
+        # Receiver v2 tags lines as "D,<node_id>,qw,qx,qy,qz,ax,...". Older
+        # firmware emitted the quat straight away. Detect either shape.
+        if parts[0] == "D" and len(parts) >= 12:
+            try:
+                nid = int(parts[1])
+            except ValueError:
+                continue
+            if node_state is not None:
+                node_state["id"] = nid
+            fields = parts[2:]
+        else:
+            fields = parts
+        if len(fields) < 10:
             continue
         try:
-            q = np.array([float(parts[0]), float(parts[1]),
-                          float(parts[2]), float(parts[3])])
-            a = np.array([float(parts[4]), float(parts[5]), float(parts[6])])
-            g = np.array([float(parts[7]), float(parts[8]), float(parts[9])])
+            q = np.array([float(fields[0]), float(fields[1]),
+                          float(fields[2]), float(fields[3])])
+            a = np.array([float(fields[4]), float(fields[5]), float(fields[6])])
+            g = np.array([float(fields[7]), float(fields[8]), float(fields[9])])
         except ValueError:
             continue
         n = np.linalg.norm(q)
@@ -394,6 +406,11 @@ def main():
     fig.text(0.5, 0.02,
              "USB-C held UP at calibration. Press 1-6 when placing a face down to log detect vs. truth.",
              ha="center", fontsize=9, color="#555")
+    fig.text(0.5, 0.055,
+             "Note: with no magnetometer, rotation of the physical box around world +Z "
+             "cannot be seen by the sensor. The rendered box's yaw is a fixed display "
+             "convention — only the DOWN face tracks reality. R_sb is unaffected.",
+             ha="center", fontsize=8, color="#888", style="italic")
 
     # Static legend top-left — colored labels, don't rotate with box.
     legend_entries = [(f"[{i+1}] {name}", color)
@@ -515,15 +532,16 @@ def main():
             _, a, g = pose.snapshot()
             now = time.time()
 
-            if R_sb_state["R"] is not None:
-                # Transform accel + gyro from sensor to box frame, run filter.
-                R_sb = R_sb_state["R"]
-                a_box = R_sb @ a
-                g_box_rad = (R_sb @ g) * (np.pi / 180.0)
-                orient.update(a_box, g_box_rad, now)
-                W = orient.matrix()
-            else:
-                W = box_rotation_from_accel(a, R_sb_state["R"])
+            # Accel-only rendering. A gyro-fed Mahony filter would let the box
+            # rotate when you spin it around world +Z — but it also picks an
+            # arbitrary yaw at init, so after a face-key press the box always
+            # jumps to the filter's chosen yaw (not yours). We don't have a
+            # magnetometer, so there's no absolute heading reference either.
+            # Using accel alone gives a deterministic 2-DOF tilt from the
+            # measured gravity direction, with a fixed canonical yaw. Same
+            # physical face-down → same display, every time. R_sb's correctness
+            # is unaffected (it only cares about per-face accel directions).
+            W = box_rotation_from_accel(a, R_sb_state["R"])
 
             rotated_centers = (W @ face_centers_rest.T).T
             for i, (_, verts, _, _) in enumerate(FACES):
